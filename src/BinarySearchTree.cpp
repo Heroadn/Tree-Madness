@@ -4,7 +4,36 @@
 #include <iostream>
 #include <queue>
 #include <stack>
+#include <algorithm>
+#include <numeric> 
+#include <vector> 
 #include "Tree.hpp"
+
+#ifdef WIN32
+#include <windows.h>
+
+void screenSize(int* columns, int* rows)
+{
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+
+	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+	*columns = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+	*rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+}
+#else
+#include <sys/ioctl.h>
+#include <unistd.h>
+
+void screenSize(int* columns, int* rows)
+{
+	struct winsize w;
+	ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+
+	*rows = w.ws_row;
+	*cols = w.ws_col;
+}
+#endif 
+#undef max
 
 struct Tree::Node
 {
@@ -14,14 +43,12 @@ struct Tree::Node
 	Node* left = nullptr;
 	Node* right = nullptr;
 	Node* prev;
-	Node** direction = nullptr;
 };
 
 class Tree::Impl
 {
 public:
 	Node* mRoot = nullptr;
-	std::vector<Node*> mNodes;
 	int n;
 
 	Impl()
@@ -38,15 +65,11 @@ public:
 		Node* next = root;
 		Node* prev = nullptr;
 		Node** target{};
-		Node** direction{};
-
-		std::stack<Node*> paths;
 		auto isLess = false;
 
 		while (next != nullptr)
 		{
 			isLess = key < next->key;
-			paths.push(next);
 			prev = next;
 
 			if (key == next->key)
@@ -57,20 +80,19 @@ public:
 
 			if (isLess)
 			{
-				direction = &next->left;
 				target = &next->left;
 				next = next->left;
 			}
 			else
 			{
-				direction = &next->right;
 				target = &next->right;
 				next = next->right;
 			}
 		}
 
 		//linking node to target(next empty position)
-		linkNode(target, createNode(key, value, 0, prev));
+		Node* node = linkNode(target, createNode(key, value, 0, prev));
+
 		return false;
 	}
 
@@ -147,8 +169,6 @@ public:
 		node->value = value;
 		node->height = height;
 		node->prev = prev;
-
-		this->mNodes.push_back(node);
 		return node;
 	}
 
@@ -156,12 +176,13 @@ public:
 	{
 		if (node == nullptr)
 		{
-			std::cout << "X(?)";
+			std::cout << "X";
 			return nullptr;
 		}
 
 		//node
-		std::cout << node->key << "(" << node->height << ")";
+		//std::cout << node->key << "(" << node->height << ")";
+		std::cout << node->key;
 		return node;
 	}
 
@@ -185,6 +206,7 @@ public:
 			if (prev == nullptr)
 			{
 				delete node;
+				mRoot = nullptr;
 				return;
 			}
 
@@ -223,6 +245,8 @@ public:
 			Node* childRight = node->right;
 			prev = node->prev;
 
+			//finding the direction of node(left or right based on key) 
+			//and replacing it with sucessor
 			if (prev != nullptr && node->key < prev->key)
 				prev->left = min;
 			else if (prev != nullptr)
@@ -230,7 +254,9 @@ public:
 
 			//usualy the sucessor is node of the righsubtree, leftmost node
 			//so it need to be removed to prevent pointing to itself
-			if (min->prev != nullptr)
+
+			//but prev can be the node to be deleted(since it will be deleted no reason to add a node to it)
+			if (min->prev != nullptr && min->prev != node)
 				min->prev->left = min->left;
 
 			//
@@ -242,7 +268,7 @@ public:
 			childRight->prev = min;
 			min->prev = node->prev;
 
-			//
+			//checks to prevent the node to pointing to itself
 			if (childLeft != min)
 				min->left = childLeft;
 			if (childRight != min)
@@ -256,22 +282,12 @@ public:
 		}
 	}
 
-	void printSegment(Node* left, Node* right, int spacesLeft, int spacesInner)
+	int maxHeight(Node* node)
 	{
-		for (size_t i = 0; i < spacesLeft; i++)
-			std::cout << " ";
+		if (node == nullptr)
+			return -1;
 
-		printNode(left);
-
-		//innerspace
-		for (size_t i = 0; i < spacesInner; i++)
-			std::cout << "-";
-
-		printNode(right);
-		std::cout << "!";
-
-		for (size_t i = 0; i < 2; i++)
-			std::cout << " ";
+		return node->height;
 	}
 };
 
@@ -315,19 +331,28 @@ void Tree::remove(int key)
 
 void Tree::print()
 {
-	auto level = 1;
+	if (mImpl->mRoot == nullptr)
+		return;
+
 	std::queue<Node*> queue;
 	queue.push(mImpl->mRoot);
 	queue.push(nullptr);
 
+	//
+	auto width = 0, height = 0;
+	screenSize(&width, &height);
+	width /= 4;
+
 	//root
 	auto node = queue.front();
-	auto leftSpaces = mImpl->mNodes.size();
-	auto num = 1;
+	std::vector<std::queue<Node*>> levels;
+	std::queue<Node*> level;
 
-	for (size_t i = 0; i < leftSpaces + 3; i++)
-		std::cout << " ";
-	std::cout << node->key << "(" << node->height << ")" << std::endl;
+	//
+	level.push(mImpl->mRoot);
+	levels.push_back(level);
+	level = std::queue<Node*>();
+
 
 	while (!queue.empty())
 	{
@@ -337,8 +362,10 @@ void Tree::print()
 
 		if (isNewLine)
 		{
-			std::cout << std::endl;
-			num += 1;
+			levels.push_back(level);
+			level = std::queue<Node*>();
+
+			//
 			if (!queue.empty())
 				queue.push(nullptr);
 
@@ -351,14 +378,44 @@ void Tree::print()
 		if (node->right != nullptr)
 			queue.push(node->right);
 
-		mImpl->printSegment(
-			node->left,
-			node->right,
-			leftSpaces,
-			num);
-		leftSpaces /= 2;
+		level.push(node->left);
+		level.push(node->right);
 	}
-	std::cout << std::endl;
+
+	for (auto line : levels)
+	{
+		for (size_t i = 0; i < width; i++)
+			std::cout << " ";
+		width -= 2;
+
+		//root
+		if (line.size() == 1)
+		{
+			auto root = line.front();
+			line.pop();
+
+			mImpl->printNode(root);
+		}
+
+		while (!line.empty())
+		{
+			auto left = line.front();
+			line.pop();
+
+			auto right = line.front();
+			line.pop();
+
+			mImpl->printNode(left);
+			for (size_t i = 0; i < 2; i++)
+				std::cout << "-";
+			mImpl->printNode(right);
+
+			std::cout << " ";
+		}
+
+		std::cout << std::endl;
+	}
+
 }
 
 size_t Tree::size()

@@ -49,7 +49,6 @@ class Tree::Impl
 {
 public:
 	Node* mRoot = nullptr;
-	std::vector<Node*> mNodes;
 	int n;
 
 	Impl()
@@ -66,15 +65,11 @@ public:
 		Node* next = root;
 		Node* prev = nullptr;
 		Node** target{};
-
-		std::stack<Node*> paths;
 		auto isLess = false;
 
 		while (next != nullptr)
 		{
-			std::cout << next->key << std::endl;
 			isLess = key < next->key;
-			paths.push(next);
 			prev = next;
 
 			if (key == next->key)
@@ -95,17 +90,34 @@ public:
 		}
 
 		//linking node to target(next empty position)
-		linkNode(target, createNode(key, value, 0, prev));
-		balance(paths);
+		Node *node = linkNode(target, createNode(key, value, 0, prev));
+		balance(node);
 
 		return false;
 	}
 
-	void balance(std::stack<Node *> paths)
+	void balance(Node* node)
+	{
+		Node* prev = node->prev;
+
+		while (prev != nullptr)
+		{
+			Node* item = prev;
+			item->height = calculateHeight(item);
+			auto balance = calculateBalance(item);
+
+			//
+			rotate(balance, item);
+
+			prev = prev->prev;
+		}
+	}
+
+	void balance(std::stack<Node*> paths)
 	{
 		while (!paths.empty())
 		{
-			auto item = paths.top();
+			Node* item = paths.top();
 			paths.pop();
 
 			//
@@ -115,19 +127,24 @@ public:
 			item->height = calculateHeight(item);
 			auto balance = calculateBalance(item);
 
-			//positive = left unbalance
-			if (balance > 1 && calculateBalance(item->left) < 0)
-				shortRotateLeft(item);
-			if (balance > 1)
-				rightRotation(item);
-
-
-			//negative = right unbalance
-			if (balance < -1 && calculateBalance(item->right) > 0)
-				shortRotateRight(item);
-			if (balance < -1)
-				leftRotation(item);
+			//
+			rotate(balance, item);
 		}
+	}
+
+	void rotate(int balance, Tree::Node* item)
+	{
+		//positive = left unbalance
+		if (balance > 1 && calculateBalance(item->left) < 0)
+			shortRotateLeft(item);
+		if (balance > 1)
+			rightRotation(item);
+
+		//negative = right unbalance
+		if (balance < -1 && calculateBalance(item->right) > 0)
+			shortRotateRight(item);
+		if (balance < -1)
+			leftRotation(item);
 	}
 
 	void shortRotateRight(Tree::Node* item)
@@ -266,8 +283,11 @@ public:
 		//b takes a as left child
 		b->left = a;
 
-		b->left->height = calculateHeight(b->left);
-		b->right->height = calculateHeight(b->right);
+		if (b->left != nullptr)
+			b->left->height = calculateHeight(b->left);
+
+		if (b->right != nullptr)
+			b->right->height = calculateHeight(b->right);
 		return b;
 	}
 
@@ -303,8 +323,11 @@ public:
 		//b takes c as left child
 		b->right = c;
 
-		b->left->height = calculateHeight(b->left);
-		b->right->height = calculateHeight(b->right);
+		if (b->left != nullptr)
+			b->left->height = calculateHeight(b->left);
+
+		if (b->right != nullptr)
+			b->right->height = calculateHeight(b->right);
 		return b;
 	}
 
@@ -324,8 +347,6 @@ public:
 		node->value = value;
 		node->height = height;
 		node->prev = prev;
-
-		this->mNodes.push_back(node);
 		return node;
 	}
 
@@ -415,6 +436,8 @@ public:
 			Node* childRight = node->right;
 			prev = node->prev;
 
+			//finding the direction of node(left or right based on key) 
+			//and replacing it with sucessor
 			if (prev != nullptr && node->key < prev->key)
 				prev->left = min;
 			else if(prev != nullptr)
@@ -422,7 +445,9 @@ public:
 
 			//usualy the sucessor is node of the righsubtree, leftmost node
 			//so it need to be removed to prevent pointing to itself
-			if (min->prev != nullptr)
+
+			//but prev can be the node to be deleted(since it will be deleted no reason to add a node to it)
+			if (min->prev != nullptr && min->prev != node)
 				min->prev->left  = min->left;
 
 			//
@@ -434,7 +459,7 @@ public:
 			childRight->prev = min;
 			min->prev = node->prev;
 
-			//
+			//checks to prevent the node to pointing to itself
 			if(childLeft != min)
 				min->left  = childLeft;
 			if (childRight != min)
@@ -452,6 +477,7 @@ public:
 			//balancing
 			balance(paths);
 
+			//node 12(left) is still points to node 10
 			delete node;
 			return;
 		}
@@ -469,7 +495,7 @@ public:
 	{
 		auto left  = maxHeight(node->left);
 		auto right = maxHeight(node->right);
-		return std::max(left, right);
+		return 1 + std::max(left, right);
 	}
 
 	int maxHeight(Node* node)
