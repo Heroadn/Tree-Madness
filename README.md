@@ -8,7 +8,7 @@ using them to implement a Symbol Table
 
 # Note
 Would change to c++ template, but the goal was to keep implementation and definition separate
-to later probably benchmark
+to later probably benchmarking
 
 # Visual studio
 To switch implementation.
